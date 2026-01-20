@@ -38,8 +38,7 @@
 
 MEMORY
 {
-    /* Divide this in half and allocate the first half to user space and the second reserved */
-    BOOTLOADER      (RX)  : origin = 0x00000000, length = 0x00006000 /* Bootloader flash */
+    BOOTLOADER      (RX)  : origin = 0x00000000, length = 0x00006000 /* Bootloader flash - unusable */
     FLASH           (RX)  : origin = 0x00006000, length = 0x00034000 /* Location of team firmware */
     FAT             (RW)  : origin = 0x0003A000, length = 0x00000400 /* Used to store tag, length, pointer values for files */
     APP2            (RX)  : origin = 0x0003A400, length = 0x00005c00 /* Location of team firmware */
