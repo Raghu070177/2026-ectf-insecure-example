@@ -52,3 +52,8 @@ bool validate_permission(uint16_t group_id, permission_enum_t perm) {
     print_debug("Permission Denied: Group ID out of bounds\n");
     return false;
 }
+typedef enum {
+    READ_PERM = 'R',
+    WRITE_PERM = 'W',
+    RECV = 'V'
+} permission_enum_t;
