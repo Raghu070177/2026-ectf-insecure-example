@@ -103,7 +103,18 @@ int read(uint16_t pkt_len, uint8_t *buf) {
     if (read_file(command->slot, &curr_file) < 0) {
         print_error("Failed to read file");
         return -1;
+
+	case READ_MSG:
+    read_req = (read_request_t *)uart_buf;
+
+    // Security check: Verify PIN before allowing read
+    if (!check_pin(read_req->pin)) {
+        print_error("Invalid PIN");
+        return -1;
     }
+	
+	}
+
     // copy structure of the persistent file
     memcpy(file_info.name, &curr_file.name, strlen(curr_file.name));
     memcpy(file_info.contents, &curr_file.contents, curr_file.contents_len);
@@ -280,6 +291,12 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
             generate_list_files(&file_list);
 
             // TODO: the reference design does not implement *ANY* security
+            // Security check: Validate permission before sending file to neighbor
+			metadata = get_file_metadata(command->slot);
+			if (metadata == NULL || !validate_permission(metadata->group_id, RECV)) {
+			print_error("Permission Denied");
+			return -1;
+			}			
             // you will want to add something here to comply with SR1
 
             // send the list of files on this device
