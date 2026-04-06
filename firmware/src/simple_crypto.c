@@ -1,32 +1,23 @@
 #include "simple_crypto.h"
-#include "security.h"
 #include <stdint.h>
 #include <string.h>
 
-// Removed #if CRYPTO_EXAMPLE guard to fix link errors
-
 int encrypt_sym(uint8_t *plaintext, size_t len, uint8_t *key, uint8_t *ciphertext) {
     Aes ctx;
-    int result;
-    if (len <= 0 || len % BLOCK_SIZE) return -1;
-    result = wc_AesSetKey(&ctx, key, 16, NULL, AES_ENCRYPTION);
-    if (result != 0) return result;
-    for (int i = 0; i < len; i += BLOCK_SIZE) {
-        result = wc_AesEncryptDirect(&ctx, ciphertext + i, plaintext + i);
-        if (result != 0) return result;
+    if (len <= 0 || len % 16) return -1;
+    if (wc_AesSetKey(&ctx, key, 16, NULL, AES_ENCRYPTION) != 0) return -1;
+    for (int i = 0; i < len; i += 16) {
+        wc_AesEncryptDirect(&ctx, ciphertext + i, plaintext + i);
     }
     return 0;
 }
 
 int decrypt_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *plaintext) {
     Aes ctx;
-    int result;
-    if (len <= 0 || len % BLOCK_SIZE) return -1;
-    result = wc_AesSetKey(&ctx, key, 16, NULL, AES_DECRYPTION);
-    if (result != 0) return result;
-    for (int i = 0; i < len; i += BLOCK_SIZE) {
-        result = wc_AesDecryptDirect(&ctx, plaintext + i, ciphertext + i);
-        if (result != 0) return result;
+    if (len <= 0 || len % 16) return -1;
+    if (wc_AesSetKey(&ctx, key, 16, NULL, AES_DECRYPTION) != 0) return -1;
+    for (int i = 0; i < len; i += 16) {
+        wc_AesDecryptDirect(&ctx, plaintext + i, ciphertext + i);
     }
     return 0;
 }
