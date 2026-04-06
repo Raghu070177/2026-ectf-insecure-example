@@ -1,6 +1,6 @@
+#include "simple_crypto.h"
 #include "security.h"
 #include "host_messaging.h"
-#include "simple_crypto.h"
 #include <string.h>
 #include <stdio.h>
 
