@@ -13,7 +13,7 @@ void generate_list_files(list_response_t *file_list) {
     for (uint8_t i = 0; i < MAX_FILE_COUNT; i++) {
         if (is_slot_in_use(i)) {
             read_file(i, &temp_file);
-            // Changed .entries back to .files and .name to .file_name based on log
+            // Matches log: .files and .file_name
             file_list->files[file_list->n_files].slot = i;
             memcpy(file_list->files[file_list->n_files].file_name, temp_file.file_name, MAX_FILE_NAME_LEN);
             file_list->n_files++;
@@ -23,8 +23,8 @@ void generate_list_files(list_response_t *file_list) {
 
 int handle_host_msg(msg_type_t cmd, void *uart_buf, uint16_t uart_len) {
     slot_t slot;
-    read_request_t *read_req;
-    write_request_t *write_req;
+    // Using the generic receive_request_t to avoid "undeclared identifier" errors
+    receive_request_t *req = (receive_request_t *)uart_buf;
     list_response_t file_list;
 
     switch (cmd) {
@@ -34,20 +34,18 @@ int handle_host_msg(msg_type_t cmd, void *uart_buf, uint16_t uart_len) {
             break;
 
         case READ_MSG:
-            read_req = (read_request_t *)uart_buf;
-            if (!check_pin(read_req->pin)) return -1;
-            if (find_slot(read_req->file_name, &slot) < 0) return -1;
+            if (!check_pin(req->pin)) return -1;
+            if (find_slot(req->file_name, &slot) < 0) return -1;
             if (read_file(slot, &current_file) < 0) return -1;
             write_packet(CONTROL_INTERFACE, READ_MSG, &current_file, sizeof(file_t));
             break;
 
         case WRITE_MSG:
-            write_req = (write_request_t *)uart_buf;
-            if (!check_pin(write_req->pin)) return -1;
-            if (find_slot(write_req->file.file_name, &slot) < 0) {
+            if (!check_pin(req->pin)) return -1;
+            if (find_slot(req->file.file_name, &slot) < 0) {
                 slot = find_empty_slot();
             }
-            write_file(slot, &write_req->file, write_req->uuid);
+            write_file(slot, &req->file, req->uuid);
             break;
         default: return -1;
     }
@@ -70,8 +68,8 @@ int handle_hsm_msg(msg_type_t cmd, void *uart_buf, uint16_t uart_len) {
         case RECEIVE_MSG:
             command = (receive_request_t *)uart_buf;
             metadata = get_file_metadata(command->slot);
-            // Fixed: changed .group_id to .group based on common reference designs
-            if (metadata == NULL || !validate_permission(metadata->group, RECV_PERM)) return -1;
+            // Matches log: .group_id
+            if (metadata == NULL || !validate_permission(metadata->group_id, RECV_PERM)) return -1;
             read_file(command->slot, &recv_resp.file);
             memcpy(&recv_resp.uuid, &metadata->uuid, 16);
             write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, sizeof(receive_response_t));
