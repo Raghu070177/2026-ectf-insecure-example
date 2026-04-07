@@ -1,6 +1,6 @@
 /**
  * @file security.c
- * @brief Security implementation with proper permissions
+ * @brief Security implementation
  */
 
 #include "security.h"
@@ -8,12 +8,12 @@
 #include "simple_crypto.h"
 #include <string.h>
 
-// Define global permissions (needed for receive command)
-group_permission_t global_permissions[MAX_PERMS] = {
-    {.group_id = 1, .read = true,  .write = true,  .receive = true},   // Admin - full access
-    {.group_id = 2, .read = true,  .write = false, .receive = true},   // Reader - read & receive only
-    {.group_id = 3, .read = false, .write = false, .receive = false},  // Restricted - no access
-    // Add more as needed
+// Add this definition - make it non-static so it can be used by other files
+const group_permission_t global_permissions[MAX_PERMS] = {
+    {.group_id = 1, .read = true, .write = true, .receive = true},   // Admin group - full access
+    {.group_id = 2, .read = true, .write = false, .receive = true},  // Reader group - read only
+    {.group_id = 3, .read = false, .write = false, .receive = false}, // Restricted group - no access
+    // Add more groups as needed
 };
 
 // Forward declaration
@@ -30,11 +30,12 @@ bool secure_compare(const uint8_t *a, const uint8_t *b, uint32_t len) {
 bool check_pin(unsigned char *pin) {
     if (pin == NULL) return false;
     
-    // This hash should match the PIN "123456" (for testing)
-    // You'll need to update this with the actual PIN hash
+    // This hash should match your PIN
+    // You can calculate this by running hash() on your PIN
+    // For PIN "123456", the hash would be calculated
     static const uint8_t stored_pin_hash[16] = {
-        0xe1, 0x0a, 0xdc, 0x39, 0x49, 0xba, 0x59, 0xab, 
-        0xbe, 0x56, 0xe0, 0x57, 0xf2, 0x0f, 0x88, 0x3e
+        0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     };
     
     uint8_t input_hash[16];
@@ -43,7 +44,6 @@ bool check_pin(unsigned char *pin) {
 }
 
 bool validate_permission(uint16_t group_id, permission_enum_t perm) {
-    // Find the group in global_permissions
     for (int i = 0; i < MAX_PERMS; i++) {
         if (global_permissions[i].group_id == group_id) {
             switch (perm) {
@@ -58,5 +58,5 @@ bool validate_permission(uint16_t group_id, permission_enum_t perm) {
             }
         }
     }
-    return false;  // Group not found
+    return false;  // Group not found - deny access
 }
