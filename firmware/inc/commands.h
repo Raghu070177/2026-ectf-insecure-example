@@ -18,6 +18,7 @@
 #include "stdint.h"
 #include "simple_flash.h"
 #include "filesystem.h"
+#include <string.h>
 #include "secrets.h"
 
 #define pkt_len_t uint16_t
@@ -102,6 +103,9 @@ typedef struct {
 } read_response_t;
 
 #pragma pack(pop) // Tells the compiler to resume padding struct members
+// ADDED: External declaration for CONTROL_INTERFACE and TRANSFER_INTERFACE
+#define CONTROL_INTERFACE 0
+#define TRANSFER_INTERFACE 1
 
 /** @brief Perform the list operation
  *

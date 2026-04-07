@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include "simple_uart.h"
 
 #define CMD_TYPE_LEN sizeof(char)
