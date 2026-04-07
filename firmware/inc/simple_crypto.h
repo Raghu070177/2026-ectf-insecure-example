@@ -1,7 +1,7 @@
 /**
  * @file "simple_crypto.h"
  * @author Ben Janis
- * @brief Simplified Crypto API Header
+ * @brief Simplified Crypto API Header - No external dependencies
  * @date 2026
  *
  * This source file is part of an example system for MITRE's 2026 Embedded CTF (eCTF).
@@ -10,23 +10,18 @@
  *
  * @copyright Copyright (c) 2026 The MITRE Corporation
  */
-#ifndef CRYPTO_EXAMPLE
-#define CRYPTO_EXAMPLE 1
-#endif
 
-#if CRYPTO_EXAMPLE
 #ifndef ECTF_CRYPTO_H
 #define ECTF_CRYPTO_H
 
 #include <stdint.h>
-
-#include "wolfssl/wolfcrypt/aes.h"
-#include "wolfssl/wolfcrypt/hash.h"
+#include <stddef.h>
+#include <string.h>
 
 /******************************** MACRO DEFINITIONS ********************************/
-#define BLOCK_SIZE AES_BLOCK_SIZE
+#define BLOCK_SIZE 16
 #define KEY_SIZE 16
-#define HASH_SIZE MD5_DIGEST_SIZE
+#define HASH_SIZE 16
 
 /******************************** FUNCTION PROTOTYPES ********************************/
 /** @brief Encrypts plaintext using a symmetric cipher
@@ -71,5 +66,4 @@ int decrypt_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *plaintex
  */
 int hash(void *data, size_t len, uint8_t *hash_out);
 
-#endif // CRYPTO_EXAMPLE
 #endif // ECTF_CRYPTO_H
