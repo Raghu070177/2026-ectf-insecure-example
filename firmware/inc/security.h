@@ -32,7 +32,9 @@ typedef struct {
     bool receive;
 } group_permission_t;
 
+// global_permissions is defined in security.c
 extern const group_permission_t global_permissions[MAX_PERMS];
+
 /** @brief Validate a pin against the HSM's pin
  *
  *  @param pin Requested pin to validate.

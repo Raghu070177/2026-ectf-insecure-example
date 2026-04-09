@@ -15,11 +15,10 @@
 #define __COMMANDS_H__
 
 #include "security.h"
-#include "stdint.h"
+#include <stdint.h>
 #include "simple_flash.h"
 #include "filesystem.h"
 #include <string.h>
-#include "secrets.h"
 
 #define pkt_len_t uint16_t
 
@@ -32,8 +31,6 @@ typedef unsigned char pin_t[6];
 #define LIST_PKT_LEN(num_files) (sizeof(num_files) + ((MAX_NAME_SIZE + sizeof(group_id_t) + sizeof(slot_t)) * num_files))
 
 #pragma pack(push, 1) // Tells the compiler not to pad the struct members
-// for more information on what struct padding does, see:
-// https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Structure-Layout.html
 
 /**********************************************************
  ******************** FILE STRUCTS ************************
@@ -102,65 +99,24 @@ typedef struct {
     uint8_t contents[MAX_CONTENTS_SIZE];
 } read_response_t;
 
-#pragma pack(pop) // Tells the compiler to resume padding struct members
-// ADDED: External declaration for CONTROL_INTERFACE and TRANSFER_INTERFACE
-#define CONTROL_INTERFACE 0
-#define TRANSFER_INTERFACE 1
+#pragma pack(pop)
 
-/** @brief Perform the list operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the list operation */
 int list(uint16_t pkt_len, uint8_t *buf);
 
-
-/** @brief Perform the read operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the read operation */
 int read(uint16_t pkt_len, uint8_t *buf);
 
-
-/** @brief Perform the write operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the write operation */
 int write(uint16_t pkt_len, uint8_t *buf);
 
-
-/** @brief Perform the receive operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the receive operation */
 int receive(uint16_t pkt_len, uint8_t *buf);
 
-
-/** @brief Perform the interrogate operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer to the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the interrogate operation */
 int interrogate(uint16_t pkt_len, uint8_t *buf);
 
-
-/** @brief Perform the listen operation
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the listen operation */
 int listen(uint16_t pkt_len, uint8_t *buf);
 
 #endif // __COMMANDS_H__

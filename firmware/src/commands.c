@@ -4,8 +4,9 @@
  * @brief eCTF command handlers
  * @date 2026
  *
- * This source file is part of an example system for MITRE's 2026 Embedded CTF (eCTF),
- * but has been fixed to resolve compilation errors.
+ * This source file is part of an example system for MITRE's 2026 Embedded CTF (eCTF).
+ * This code is being provided only for educational purposes for the 2026 MITRE eCTF competition,
+ * and may not meet MITRE standards for quality. Use this code at your own risk!
  *
  * @copyright Copyright (c) 2026 The MITRE Corporation
  */
@@ -14,27 +15,13 @@
 #include "commands.h"
 #include "filesystem.h"
 #include "security.h"
-#include "simple_crypto.h"
-
-// Add missing includes
 #include <string.h>
-#include <stdio.h>
-
-// Add missing function declarations that should be in headers
-extern group_permission_t global_permissions[MAX_PERMS];
-extern int check_pin(const char *pin);
-extern int validate_permission(uint8_t group_id, uint8_t required_perm);
-extern void print_error(const char *msg);
-
-/* IMPORTANT COMPONENTS FROM HSM.c */
-static file_t current_file;
 
 /**********************************************************
  ******************** HELPER FUNCTIONS ********************
  **********************************************************/
 
 /** @brief List out the files on the system.
- *      To be utilized by list and interrogate
  *
  *  @param file_list A pointer to the list_response_t variable in
  *      which to store the results
@@ -43,12 +30,9 @@ void generate_list_files(list_response_t *file_list) {
     file_list->n_files = 0;
     file_t temp_file;
 
-    // Loop through all files on the system
     for (uint8_t i = 0; i < MAX_FILE_COUNT; i++) {
-        // Check if the file is in use
         if (is_slot_in_use(i)) {
             read_file(i, &temp_file);
-
             file_list->metadata[file_list->n_files].slot = i;
             file_list->metadata[file_list->n_files].group_id = temp_file.group_id;
             strcpy(file_list->metadata[file_list->n_files].name, (char *)&temp_file.name);
@@ -61,91 +45,72 @@ void generate_list_files(list_response_t *file_list) {
  ******************** COMMAND HANDLERS ********************
  **********************************************************/
 
-/** @brief Perform the list operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the list operation */
 int list(uint16_t pkt_len, uint8_t *buf) {
     list_command_t *command = (list_command_t*)buf;
     list_response_t file_list;
 
-    memset(&file_list, 0, sizeof(file_list));
-
-    // copy relevant fields into the final struct
-    generate_list_files(&file_list);
-
+    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
     }
 
-    // write success packet with list
+    memset(&file_list, 0, sizeof(file_list));
+    generate_list_files(&file_list);
+
     pkt_len_t length = LIST_PKT_LEN(file_list.n_files);
     write_packet(CONTROL_INTERFACE, LIST_MSG, &file_list, length);
     return 0;
 }
 
-/** @brief Perform the read operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the read operation */
 int read(uint16_t pkt_len, uint8_t *buf) {
     read_command_t *command = (read_command_t*)buf;
     read_response_t file_info;
     file_t curr_file;
 
+    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
     }
 
-    // zeroizing memory is a pretty good practice
     memset(&file_info, 0, sizeof(read_response_t));
 
     if (read_file(command->slot, &curr_file) < 0) {
         print_error("Failed to read file");
         return -1;
     }
-    
-    // copy structure of the persistent file
-    memcpy(file_info.name, &curr_file.name, strlen((char *)curr_file.name));
-    memcpy(file_info.contents, &curr_file.contents, curr_file.contents_len);
 
+    // Permission check BEFORE returning contents
     if (!validate_permission(curr_file.group_id, PERM_READ)) {
-        print_error("Invalid permission");
+        print_error("Invalid permission - read access denied");
         return -1;
     }
 
-    // write a success message with the file information
+    memcpy(file_info.name, &curr_file.name, strlen((char *)curr_file.name));
+    memcpy(file_info.contents, &curr_file.contents, curr_file.contents_len);
+
     pkt_len_t length = MAX_NAME_SIZE + curr_file.contents_len;
     write_packet(CONTROL_INTERFACE, READ_MSG, &file_info, length);
     return 0;
 }
 
-/** @brief Perform the write operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the write operation */
 int write(uint16_t pkt_len, uint8_t *buf) {
     write_command_t *command = (write_command_t*)buf;
     file_t curr_file;
 
+    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
     }
 
+    // Permission check
     if (!validate_permission(command->group_id, PERM_WRITE)) {
-        print_error("Invalid permission");
+        print_error("Invalid permission - write access denied");
         return -1;
     }
 
@@ -157,24 +122,16 @@ int write(uint16_t pkt_len, uint8_t *buf) {
         command->contents
     );
 
-    // Store the file persistently
     if (write_file(command->slot, &curr_file, command->uuid) < 0) {
         print_error("Error storing file");
         return -1;
     }
 
-    // Success message with an empty body
     write_packet(CONTROL_INTERFACE, WRITE_MSG, NULL, 0);
     return 0;
 }
 
-/** @brief Perform the receive operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the receive operation */
 int receive(uint16_t pkt_len, uint8_t *buf) {
     receive_command_t *command = (receive_command_t *)buf;
     receive_request_t request;
@@ -182,83 +139,66 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     msg_type_t cmd;
     uint16_t len_recv_msg;
 
+    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
     }
 
-    // zeroize the buffers we will use
     memset(&recv_resp, 0, sizeof(recv_resp));
     memset(&request, 0, sizeof(request));
 
-    // prep request to neighbor
     request.slot = command->read_slot;
+    // Send our permissions so the neighbor can validate we have RECEIVE permission
     memcpy(&request.permissions, &global_permissions, sizeof(group_permission_t) * MAX_PERMS);
 
-    // request the file from the neighboring device
     write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, (void *)&request, sizeof(receive_request_t));
 
-    // set essentially no limit to the receive message size
     len_recv_msg = 0xffff;
-
-    // receive the response message
     read_packet(TRANSFER_INTERFACE, &cmd, &recv_resp, &len_recv_msg);
+
     if (cmd != RECEIVE_MSG) {
         print_error("Opcode mismatch");
         return -1;
     }
 
-    // write that file into the file system
     if (write_file(command->write_slot, &recv_resp.file, recv_resp.uuid) < 0) {
         print_error("Writing received file failed");
         return -1;
     }
-    // empty success message
+
     write_packet(CONTROL_INTERFACE, RECEIVE_MSG, NULL, 0);
     return 0;
 }
 
-/** @brief Perform the interrogate operation
- *
- *  @param pkt_len The length of the incoming packet
- *  @param buf A pointer to the incoming message buffer
- *
- * @return 0 upon success. A negative value on error.
- */
+/** @brief Perform the interrogate operation */
 int interrogate(uint16_t pkt_len, uint8_t *buf) {
     interrogate_command_t *command = (interrogate_command_t*)buf;
     msg_type_t cmd;
     list_response_t final_list_buf;
     uint16_t len_recv_msg;
 
-    // pin check
+    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
     }
 
-    // request the file list from the neighboring device
     write_packet(TRANSFER_INTERFACE, INTERROGATE_MSG, NULL, 0);
 
-    // set essentially no limit to the receive message size
     len_recv_msg = 0xffff;
-
-    // receive the response message
     read_packet(TRANSFER_INTERFACE, &cmd, &final_list_buf, &len_recv_msg);
+
     if (cmd != INTERROGATE_MSG) {
         print_error("Opcode mismatch");
         return -1;
     }
 
-    // return the final list to the user
     write_packet(CONTROL_INTERFACE, INTERROGATE_MSG, &final_list_buf, len_recv_msg);
     return 0;
 }
 
-/** @brief Perform the listen operation
- *
- * @return 0 upon success. A negative value on error.
-*/
+/** @brief Perform the listen operation */
 int listen(uint16_t pkt_len, uint8_t *buf) {
     uint8_t uart_buf[sizeof(receive_request_t)];
     msg_type_t cmd;
@@ -269,58 +209,59 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
     const filesystem_entry_t *metadata;
 
     read_length = sizeof(uart_buf);
-
-    // Receive a packet from a neighboring hsm
     memset(uart_buf, 0, sizeof(uart_buf));
     read_packet(TRANSFER_INTERFACE, &cmd, uart_buf, &read_length);
 
     switch (cmd) {
         case INTERROGATE_MSG:
-            // zeroize the buffers we will use
             memset(&file_list, 0, sizeof(file_list));
-
-            // generate a list of files for the other device
             generate_list_files(&file_list);
-
-            // TODO: the reference design does not implement *ANY* security
-            // you will want to add something here to comply with SR1
-
-            // send the list of files on this device
             write_length = LIST_PKT_LEN(file_list.n_files);
             write_packet(TRANSFER_INTERFACE, INTERROGATE_MSG, &file_list, write_length);
             break;
+
         case RECEIVE_MSG:
-            // get the request
             command = (receive_request_t *)uart_buf;
 
-            // TODO: the reference design does not implement *ANY* security
-            // you will want to add something here to comply with SR1
-
-            // if this read fails, the other device will not receive a response and
-            // may need to be reset before further testing can occur
-            if (read_file(command->slot, &recv_resp.file) < 0) {
-                print_error("Failed to read file");
-                return -1;
-            }
-
+            // Security: validate that the requesting HSM has RECEIVE permission
+            // for the group that owns this file before sending it
             metadata = get_file_metadata(command->slot);
             if (metadata == NULL) {
                 print_error("Getting metadata failed");
                 return -1;
             }
 
-            memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
+            if (read_file(command->slot, &recv_resp.file) < 0) {
+                print_error("Failed to read file");
+                return -1;
+            }
 
-            // send the file to the neighbor hsm
+            // Check that the requester has RECEIVE permission for this file's group
+            {
+                bool requester_has_permission = false;
+                for (int i = 0; i < MAX_PERMS; i++) {
+                    if (command->permissions[i].group_id == recv_resp.file.group_id
+                        && command->permissions[i].receive) {
+                        requester_has_permission = true;
+                        break;
+                    }
+                }
+                if (!requester_has_permission) {
+                    print_error("Requester lacks receive permission");
+                    return -1;
+                }
+            }
+
+            memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
             write_length = sizeof(receive_response_t);
             write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, write_length);
             break;
+
         default:
             print_error("Bad message type");
             return -1;
     }
 
-    // blank success message
     write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
     return 0;
 }
