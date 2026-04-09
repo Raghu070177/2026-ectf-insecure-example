@@ -1,12 +1,7 @@
 /**
  * @file commands.c
- * @author Samuel Meyers
- * @brief eCTF command handlers
+ * @brief eCTF command handlers with enforced security checks
  * @date 2026
- *
- * This source file is part of an example system for MITRE's 2026 Embedded CTF (eCTF).
- * This code is being provided only for educational purposes for the 2026 MITRE eCTF competition,
- * and may not meet MITRE standards for quality. Use this code at your own risk!
  *
  * @copyright Copyright (c) 2026 The MITRE Corporation
  */
@@ -31,7 +26,8 @@ void generate_list_files(list_response_t *file_list) {
             read_file(i, &temp_file);
             file_list->metadata[file_list->n_files].slot = i;
             file_list->metadata[file_list->n_files].group_id = temp_file.group_id;
-            strcpy(file_list->metadata[file_list->n_files].name, (char *)&temp_file.name);
+            // Use memcpy to handle 16-byte names without null terminators
+            memcpy(file_list->metadata[file_list->n_files].name, temp_file.name, MAX_NAME_SIZE);
             file_list->n_files++;
         }
     }
@@ -47,6 +43,7 @@ int list(uint16_t pkt_len, uint8_t *buf) {
 
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Invalid PIN", 11);
         return -1;
     }
 
@@ -65,6 +62,7 @@ int read(uint16_t pkt_len, uint8_t *buf) {
 
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Invalid PIN", 11);
         return -1;
     }
 
@@ -72,17 +70,18 @@ int read(uint16_t pkt_len, uint8_t *buf) {
 
     if (read_file(command->slot, &curr_file) < 0) {
         print_error("Failed to read file");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Read failed", 11);
         return -1;
     }
 
     if (!validate_permission(curr_file.group_id, PERM_READ)) {
         print_error("Invalid permission - read access denied");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Denied", 6);
         return -1;
     }
 
-    memcpy(file_info.name, &curr_file.name, strlen((char *)curr_file.name));
-    memcpy(file_info.contents, &curr_file.contents, curr_file.contents_len);
-    strncpy((char *)file_info.name, (char *)curr_file.name, MAX_NAME_SIZE);
+    memcpy(file_info.name, curr_file.name, MAX_NAME_SIZE);
+    memcpy(file_info.contents, curr_file.contents, curr_file.contents_len);
 
     pkt_len_t length = MAX_NAME_SIZE + curr_file.contents_len;
     write_packet(CONTROL_INTERFACE, READ_MSG, &file_info, length);
@@ -95,11 +94,13 @@ int write(uint16_t pkt_len, uint8_t *buf) {
 
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Invalid PIN", 11);
         return -1;
     }
 
     if (!validate_permission(command->group_id, PERM_WRITE)) {
         print_error("Invalid permission - write access denied");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Denied", 6);
         return -1;
     }
 
@@ -113,6 +114,7 @@ int write(uint16_t pkt_len, uint8_t *buf) {
 
     if (write_file(command->slot, &curr_file, command->uuid) < 0) {
         print_error("Error storing file");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Store failed", 12);
         return -1;
     }
 
@@ -129,6 +131,7 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
 
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Invalid PIN", 11);
         return -1;
     }
 
@@ -165,6 +168,7 @@ int interrogate(uint16_t pkt_len, uint8_t *buf) {
 
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Invalid PIN", 11);
         return -1;
     }
 
@@ -205,40 +209,31 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
 
         case RECEIVE_MSG:
             command = (receive_request_t *)uart_buf;
-
             metadata = get_file_metadata(command->slot);
             if (metadata == NULL) {
-                // Always respond on TRANSFER so requester does not hang
-                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Getting metadata failed", 22);
-                print_error("Getting metadata failed");
+                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Metadata failed", 15);
                 write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
                 return -1;
             }
 
             if (read_file(command->slot, &recv_resp.file) < 0) {
-                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Failed to read file", 19);
-                print_error("Failed to read file");
+                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Read failed", 11);
                 write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
                 return -1;
             }
 
-            // Validate requester has RECEIVE permission for this file's group
-            {
-                bool requester_has_permission = false;
-                for (int i = 0; i < MAX_PERMS; i++) {
-                    if (command->permissions[i].group_id == recv_resp.file.group_id
-                        && command->permissions[i].receive) {
-                        requester_has_permission = true;
-                        break;
-                    }
+            bool requester_has_permission = false;
+            for (int i = 0; i < MAX_PERMS; i++) {
+                if (command->permissions[i].group_id == recv_resp.file.group_id
+                    && command->permissions[i].receive) {
+                    requester_has_permission = true;
+                    break;
                 }
-                if (!requester_has_permission) {
-                    // Must respond on TRANSFER so requester does not hang
-                    write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Could not import file", 21);
-                    print_error("Requester lacks receive permission");
-                    write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
-                    return -1;
-                }
+            }
+            if (!requester_has_permission) {
+                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
+                write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
+                return -1;
             }
 
             memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
@@ -247,7 +242,6 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
             break;
 
         default:
-            print_error("Bad message type");
             write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
             return -1;
     }
