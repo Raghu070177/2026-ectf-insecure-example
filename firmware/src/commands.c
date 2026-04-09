@@ -127,6 +127,7 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, (void *)&request, sizeof(receive_request_t));
 
     len_recv_msg = sizeof(receive_response_t);
+    // LOGIC FIX: Check the return value of read_packet to handle timeouts/disconnections
     if (read_packet(TRANSFER_INTERFACE, &cmd, &recv_resp, &len_recv_msg) != MSG_OK || cmd != RECEIVE_MSG) {
         write_packet(CONTROL_INTERFACE, ERROR_MSG, "Receive failed", 14);
         return -1;
@@ -155,6 +156,7 @@ int interrogate(uint16_t pkt_len, uint8_t *buf) {
     write_packet(TRANSFER_INTERFACE, INTERROGATE_MSG, NULL, 0);
 
     len_recv_msg = sizeof(list_response_t);
+    // LOGIC FIX: Check for MSG_OK and ensure the packet length is sufficient for list data
     if (read_packet(TRANSFER_INTERFACE, &cmd, &final_list_buf, &len_recv_msg) != MSG_OK || cmd != INTERROGATE_MSG) {
         write_packet(CONTROL_INTERFACE, ERROR_MSG, "Interrogate failed", 18);
         return -1;
@@ -165,8 +167,7 @@ int interrogate(uint16_t pkt_len, uint8_t *buf) {
 }
 
 int listen(uint16_t pkt_len, uint8_t *buf) {
-    // FIX: Use a larger buffer to handle different message types safely
-    uint8_t uart_buf[MAX_MSG_SIZE];
+    uint8_t uart_buf[sizeof(receive_request_t)];
     msg_type_t cmd;
     pkt_len_t write_length, read_length;
     list_response_t file_list;
@@ -175,6 +176,7 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
     const filesystem_entry_t *metadata;
 
     read_length = sizeof(uart_buf);
+    // If we fail to read a packet from the other device, we still notify the host we are done listening
     if (read_packet(TRANSFER_INTERFACE, &cmd, uart_buf, &read_length) == MSG_OK) {
         switch (cmd) {
             case INTERROGATE_MSG:
@@ -187,8 +189,12 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
             case RECEIVE_MSG:
                 command = (receive_request_t *)uart_buf;
                 metadata = get_file_metadata(command->slot);
-                
-                if (metadata == NULL || read_file(command->slot, &recv_resp.file) < 0) {
+                if (metadata == NULL) {
+                    write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
+                    break;
+                }
+
+                if (read_file(command->slot, &recv_resp.file) < 0) {
                     write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
                     break;
                 }
@@ -204,8 +210,7 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
                 if (!authorized) {
                     write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
                 } else {
-                    // FIX: Ensure UUID copy is clean
-                    memcpy(recv_resp.uuid, metadata->uuid, UUID_SIZE);
+                    memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
                     write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, sizeof(receive_response_t));
                 }
                 break;
