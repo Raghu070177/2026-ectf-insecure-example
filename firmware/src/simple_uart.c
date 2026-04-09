@@ -11,7 +11,7 @@
 #include <string.h>
 
 // External declarations
-extern group_permission_t global_permissions[MAX_PERMS];
+extern const group_permission_t global_permissions[MAX_PERMS];
 
 static file_t current_file;
 
