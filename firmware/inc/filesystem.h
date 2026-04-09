@@ -51,12 +51,11 @@ static filesystem_entry_t FILE_ALLOCATION_TABLE[MAX_FILE_COUNT];
 
 // File structure
 typedef struct {
-    uint32_t in_use;
-    group_id_t group_id;
-    char name[MAX_NAME_SIZE];
-    uint16_t contents_len;
-    uint8_t contents[MAX_CONTENTS_SIZE];
-} file_t;
+    uint8_t uuid[UUID_SIZE];   // 16 bytes
+    uint32_t flash_addr;       // 4 bytes
+    uint32_t length;           // 4 bytes
+    // REMOVE: uint16_t group_id  ← DELETE THIS LINE
+} filesystem_entry_t;
 
 // Function declarations
 int init_fs();
