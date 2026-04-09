@@ -22,11 +22,6 @@
  ******************** HELPER FUNCTIONS ********************
  **********************************************************/
 
-/** @brief List out the files on the system.
- *
- *  @param file_list A pointer to the list_response_t variable in
- *      which to store the results
- */
 void generate_list_files(list_response_t *file_list) {
     file_list->n_files = 0;
     file_t temp_file;
@@ -46,12 +41,10 @@ void generate_list_files(list_response_t *file_list) {
  ******************** COMMAND HANDLERS ********************
  **********************************************************/
 
-/** @brief Perform the list operation */
 int list(uint16_t pkt_len, uint8_t *buf) {
     list_command_t *command = (list_command_t*)buf;
     list_response_t file_list;
 
-    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
@@ -65,13 +58,11 @@ int list(uint16_t pkt_len, uint8_t *buf) {
     return 0;
 }
 
-/** @brief Perform the read operation */
 int read(uint16_t pkt_len, uint8_t *buf) {
     read_command_t *command = (read_command_t*)buf;
     read_response_t file_info;
     file_t curr_file;
 
-    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
@@ -84,7 +75,6 @@ int read(uint16_t pkt_len, uint8_t *buf) {
         return -1;
     }
 
-    // Permission check BEFORE returning contents
     if (!validate_permission(curr_file.group_id, PERM_READ)) {
         print_error("Invalid permission - read access denied");
         return -1;
@@ -98,18 +88,15 @@ int read(uint16_t pkt_len, uint8_t *buf) {
     return 0;
 }
 
-/** @brief Perform the write operation */
 int write(uint16_t pkt_len, uint8_t *buf) {
     write_command_t *command = (write_command_t*)buf;
     file_t curr_file;
 
-    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
     }
 
-    // Permission check
     if (!validate_permission(command->group_id, PERM_WRITE)) {
         print_error("Invalid permission - write access denied");
         return -1;
@@ -132,7 +119,6 @@ int write(uint16_t pkt_len, uint8_t *buf) {
     return 0;
 }
 
-/** @brief Perform the receive operation */
 int receive(uint16_t pkt_len, uint8_t *buf) {
     receive_command_t *command = (receive_command_t *)buf;
     receive_request_t request;
@@ -140,7 +126,6 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     msg_type_t cmd;
     uint16_t len_recv_msg;
 
-    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
@@ -150,7 +135,6 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     memset(&request, 0, sizeof(request));
 
     request.slot = command->read_slot;
-    // Send our permissions so the neighbor can validate we have RECEIVE permission
     memcpy(&request.permissions, &global_permissions, sizeof(group_permission_t) * MAX_PERMS);
 
     write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, (void *)&request, sizeof(receive_request_t));
@@ -172,14 +156,12 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     return 0;
 }
 
-/** @brief Perform the interrogate operation */
 int interrogate(uint16_t pkt_len, uint8_t *buf) {
     interrogate_command_t *command = (interrogate_command_t*)buf;
     msg_type_t cmd;
     list_response_t final_list_buf;
     uint16_t len_recv_msg;
 
-    // PIN check first
     if (!check_pin(command->pin)) {
         print_error("Invalid pin");
         return -1;
@@ -199,7 +181,6 @@ int interrogate(uint16_t pkt_len, uint8_t *buf) {
     return 0;
 }
 
-/** @brief Perform the listen operation */
 int listen(uint16_t pkt_len, uint8_t *buf) {
     uint8_t uart_buf[sizeof(receive_request_t)];
     msg_type_t cmd;
@@ -224,20 +205,23 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
         case RECEIVE_MSG:
             command = (receive_request_t *)uart_buf;
 
-            // Security: validate that the requesting HSM has RECEIVE permission
-            // for the group that owns this file before sending it
             metadata = get_file_metadata(command->slot);
             if (metadata == NULL) {
+                // Always respond on TRANSFER so requester does not hang
+                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Getting metadata failed", 22);
                 print_error("Getting metadata failed");
+                write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
                 return -1;
             }
 
             if (read_file(command->slot, &recv_resp.file) < 0) {
+                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Failed to read file", 19);
                 print_error("Failed to read file");
+                write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
                 return -1;
             }
 
-            // Check that the requester has RECEIVE permission for this file's group
+            // Validate requester has RECEIVE permission for this file's group
             {
                 bool requester_has_permission = false;
                 for (int i = 0; i < MAX_PERMS; i++) {
@@ -248,7 +232,10 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
                     }
                 }
                 if (!requester_has_permission) {
+                    // Must respond on TRANSFER so requester does not hang
+                    write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Could not import file", 21);
                     print_error("Requester lacks receive permission");
+                    write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
                     return -1;
                 }
             }
@@ -260,6 +247,7 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
 
         default:
             print_error("Bad message type");
+            write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
             return -1;
     }
 
