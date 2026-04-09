@@ -127,9 +127,8 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, (void *)&request, sizeof(receive_request_t));
 
     len_recv_msg = sizeof(receive_response_t);
-    read_packet(TRANSFER_INTERFACE, &cmd, &recv_resp, &len_recv_msg);
-
-    if (cmd != RECEIVE_MSG) {
+    // LOGIC FIX: Check the return value of read_packet to handle timeouts/disconnections
+    if (read_packet(TRANSFER_INTERFACE, &cmd, &recv_resp, &len_recv_msg) != MSG_OK || cmd != RECEIVE_MSG) {
         write_packet(CONTROL_INTERFACE, ERROR_MSG, "Receive failed", 14);
         return -1;
     }
@@ -157,9 +156,8 @@ int interrogate(uint16_t pkt_len, uint8_t *buf) {
     write_packet(TRANSFER_INTERFACE, INTERROGATE_MSG, NULL, 0);
 
     len_recv_msg = sizeof(list_response_t);
-    read_packet(TRANSFER_INTERFACE, &cmd, &final_list_buf, &len_recv_msg);
-
-    if (cmd != INTERROGATE_MSG) {
+    // LOGIC FIX: Check for MSG_OK and ensure the packet length is sufficient for list data
+    if (read_packet(TRANSFER_INTERFACE, &cmd, &final_list_buf, &len_recv_msg) != MSG_OK || cmd != INTERROGATE_MSG) {
         write_packet(CONTROL_INTERFACE, ERROR_MSG, "Interrogate failed", 18);
         return -1;
     }
@@ -178,49 +176,51 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
     const filesystem_entry_t *metadata;
 
     read_length = sizeof(uart_buf);
-    read_packet(TRANSFER_INTERFACE, &cmd, uart_buf, &read_length);
-
-    switch (cmd) {
-        case INTERROGATE_MSG:
-            memset(&file_list, 0, sizeof(file_list));
-            generate_list_files(&file_list);
-            write_length = LIST_PKT_LEN(file_list.n_files);
-            write_packet(TRANSFER_INTERFACE, INTERROGATE_MSG, &file_list, write_length);
-            break;
-
-        case RECEIVE_MSG:
-            command = (receive_request_t *)uart_buf;
-            metadata = get_file_metadata(command->slot);
-            if (metadata == NULL) {
-                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
+    // If we fail to read a packet from the other device, we still notify the host we are done listening
+    if (read_packet(TRANSFER_INTERFACE, &cmd, uart_buf, &read_length) == MSG_OK) {
+        switch (cmd) {
+            case INTERROGATE_MSG:
+                memset(&file_list, 0, sizeof(file_list));
+                generate_list_files(&file_list);
+                write_length = LIST_PKT_LEN(file_list.n_files);
+                write_packet(TRANSFER_INTERFACE, INTERROGATE_MSG, &file_list, write_length);
                 break;
-            }
 
-            if (read_file(command->slot, &recv_resp.file) < 0) {
-                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
-                break;
-            }
-
-            bool authorized = false;
-            for (int i = 0; i < MAX_PERMS; i++) {
-                if (command->permissions[i].group_id == recv_resp.file.group_id && command->permissions[i].receive) {
-                    authorized = true;
+            case RECEIVE_MSG:
+                command = (receive_request_t *)uart_buf;
+                metadata = get_file_metadata(command->slot);
+                if (metadata == NULL) {
+                    write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
                     break;
                 }
-            }
 
-            if (!authorized) {
-                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
-            } else {
-                memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
-                write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, sizeof(receive_response_t));
-            }
-            break;
+                if (read_file(command->slot, &recv_resp.file) < 0) {
+                    write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
+                    break;
+                }
 
-        default:
-            break;
+                bool authorized = false;
+                for (int i = 0; i < MAX_PERMS; i++) {
+                    if (command->permissions[i].group_id == recv_resp.file.group_id && command->permissions[i].receive) {
+                        authorized = true;
+                        break;
+                    }
+                }
+
+                if (!authorized) {
+                    write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Denied", 6);
+                } else {
+                    memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
+                    write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, sizeof(receive_response_t));
+                }
+                break;
+
+            default:
+                break;
+        }
     }
 
+    // Crucial: ALWAYS tell the host the listen session is closed
     write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
     return 0;
 }
