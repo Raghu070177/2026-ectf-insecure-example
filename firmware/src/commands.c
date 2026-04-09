@@ -15,6 +15,7 @@
 #include "commands.h"
 #include "filesystem.h"
 #include "security.h"
+#include "secrets.h"
 #include <string.h>
 
 /**********************************************************
