@@ -82,6 +82,7 @@ int read(uint16_t pkt_len, uint8_t *buf) {
 
     memcpy(file_info.name, &curr_file.name, strlen((char *)curr_file.name));
     memcpy(file_info.contents, &curr_file.contents, curr_file.contents_len);
+    strncpy((char *)file_info.name, (char *)curr_file.name, MAX_NAME_SIZE);
 
     pkt_len_t length = MAX_NAME_SIZE + curr_file.contents_len;
     write_packet(CONTROL_INTERFACE, READ_MSG, &file_info, length);
