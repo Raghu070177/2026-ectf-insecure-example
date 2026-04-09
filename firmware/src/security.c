@@ -8,30 +8,13 @@
 
 #include "security.h"
 #include "secrets.h"
-#include "host_messaging.h"
-#include "simple_crypto.h"
 #include <string.h>
 
-/**
- * global_permissions defines which groups this HSM has permissions for.
- * Defined as const so it matches the 'extern const' declaration in security.h.
- * The build system generates secrets.h with the actual permission values.
- * These are placeholder values - the real values come from generate_secrets.
- */
-const group_permission_t global_permissions[MAX_PERMS] = {
-    {.group_id = 0, .read = false, .write = false, .receive = false},
-    {.group_id = 0, .read = false, .write = false, .receive = false},
-    {.group_id = 0, .read = false, .write = false, .receive = false},
-    {.group_id = 0, .read = false, .write = false, .receive = false},
-    {.group_id = 0, .read = false, .write = false, .receive = false},
-    {.group_id = 0, .read = false, .write = false, .receive = false},
-    {.group_id = 0, .read = false, .write = false, .receive = false},
-    {.group_id = 0, .read = false, .write = false, .receive = false},
-};
+// NOTE: global_permissions is defined as 'const static' in the
+// build-system-generated inc/secrets.h. Do NOT redefine it here.
 
 /**
  * @brief Constant-time comparison to prevent timing attacks.
- *        Compares two byte arrays of length `len`.
  *        Returns true only if all bytes match.
  */
 static bool secure_compare(const uint8_t *a, const uint8_t *b, uint32_t len) {
@@ -43,26 +26,23 @@ static bool secure_compare(const uint8_t *a, const uint8_t *b, uint32_t len) {
 }
 
 /**
- * @brief Validate a pin against the stored PIN hash.
- *        Hashes the input PIN and compares it against PIN_HASH
- *        using constant-time comparison.
+ * @brief Validate a pin against the HSM_PIN from secrets.h.
+ *        Uses constant-time comparison to prevent timing attacks.
  *
- * @param pin Pointer to the input PIN bytes.
+ * @param pin Pointer to the input PIN bytes (6 bytes).
  * @return true if PIN matches, false otherwise.
  */
 bool check_pin(unsigned char *pin) {
     if (pin == NULL) return false;
 
-    uint8_t input_hash[HASH_SIZE];
-    memset(input_hash, 0, sizeof(input_hash));
-
-    if (hash(pin, PIN_LENGTH, input_hash) != 0) return false;
-
-    return secure_compare(input_hash, PIN_HASH, HASH_SIZE);
+    // HSM_PIN is a string macro injected by the build system into secrets.h
+    // e.g. #define HSM_PIN "4a95ee"
+    return secure_compare(pin, (const uint8_t *)HSM_PIN, PIN_LENGTH);
 }
 
 /**
  * @brief Validate that this HSM has the requested permission for a group.
+ *        Uses global_permissions defined in secrets.h.
  *
  * @param group_id The group ID to check.
  * @param perm The permission type to check.
