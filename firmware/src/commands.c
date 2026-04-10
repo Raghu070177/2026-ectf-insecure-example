@@ -4,10 +4,6 @@
  * @brief eCTF command handlers
  * @date 2026
  *
- * This source file is part of an example system for MITRE's 2026 Embedded CTF (eCTF).
- * This code is being provided only for educational purposes for the 2026 MITRE eCTF competition,
- * and may not meet MITRE standards for quality. Use this code at your own risk!
- *
  * @copyright Copyright (c) 2026 The MITRE Corporation
  */
 
@@ -80,8 +76,10 @@ int read(uint16_t pkt_len, uint8_t *buf) {
         return -1;
     }
 
-    memcpy(file_info.name, &curr_file.name, strlen((char *)curr_file.name));
-    memcpy(file_info.contents, &curr_file.contents, curr_file.contents_len);
+    memcpy(file_info.name, curr_file.name, strlen((char *)curr_file.name));
+    if (curr_file.contents_len > 0) {
+        memcpy(file_info.contents, curr_file.contents, curr_file.contents_len);
+    }
 
     pkt_len_t length = MAX_NAME_SIZE + curr_file.contents_len;
     write_packet(CONTROL_INTERFACE, READ_MSG, &file_info, length);
@@ -207,7 +205,6 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
 
             metadata = get_file_metadata(command->slot);
             if (metadata == NULL) {
-                // Always respond on TRANSFER so requester does not hang
                 write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Getting metadata failed", 22);
                 print_error("Getting metadata failed");
                 write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
@@ -232,7 +229,6 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
                     }
                 }
                 if (!requester_has_permission) {
-                    // Must respond on TRANSFER so requester does not hang
                     write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Could not import file", 21);
                     print_error("Requester lacks receive permission");
                     write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
@@ -241,7 +237,10 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
             }
 
             memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
-            write_length = sizeof(receive_response_t);
+
+            // Send only the actual data needed: UUID + file header + actual contents
+            // NOT the full sizeof(receive_response_t) which wastes 8KB for small files
+            write_length = UUID_SIZE + FILE_TOTAL_SIZE(recv_resp.file.contents_len);
             write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, write_length);
             break;
 
