@@ -141,7 +141,6 @@ int main(void) {
 
     // process commands forever
     while (1) {
-        print_debug("Ready\n");
 
         STATUS_LED_ON();
 
