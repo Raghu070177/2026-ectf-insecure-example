@@ -30,6 +30,11 @@ int init_fs() {
 
 bool is_slot_in_use(slot_t slot) {
     file_t temp_file;
+    // Guard: if flash_addr is 0 or length is 0, slot is not in use
+    if (FILE_ALLOCATION_TABLE[slot].flash_addr == 0 ||
+        FILE_ALLOCATION_TABLE[slot].length == 0) {
+        return false;
+    }
     return (!read_file(slot, &temp_file) && temp_file.in_use == FILE_IN_USE);
 }
 
@@ -47,7 +52,10 @@ int create_file(
     dest->contents_len = contents_len;
 
     strcpy(dest->name, name);
-    memcpy(dest->contents, contents, contents_len);
+    // Only copy contents if there are any
+    if (contents_len > 0 && contents != NULL) {
+        memcpy(dest->contents, contents, contents_len);
+    }
 
     return 0;
 }
@@ -56,7 +64,13 @@ int write_file(slot_t slot, file_t *src, uint8_t *uuid) {
     unsigned int length, flash_addr;
 
     flash_addr = FILE_START_PAGE_FROM_SLOT(slot);
+    // FILE_TOTAL_SIZE(0) = offsetof(file_t, contents) which is valid for 0-byte files
     length = FILE_TOTAL_SIZE(src->contents_len);
+
+    // Ensure minimum write length is at least the file header
+    if (length < offsetof(file_t, contents)) {
+        length = offsetof(file_t, contents);
+    }
 
     memcpy(&FILE_ALLOCATION_TABLE[slot].uuid, uuid, UUID_SIZE);
     FILE_ALLOCATION_TABLE[slot].flash_addr = flash_addr;
@@ -75,11 +89,13 @@ int read_file(slot_t slot, file_t *dest) {
 
     flash_addr = FILE_ALLOCATION_TABLE[slot].flash_addr;
     file_size = FILE_ALLOCATION_TABLE[slot].length;
-    if (flash_addr < 0 || file_size < 0) {
+
+    // Guard against invalid FAT entries
+    if (flash_addr <= 0 || file_size <= 0) {
         return -1;
     }
-    flash_simple_read(flash_addr, dest, file_size);
 
+    flash_simple_read(flash_addr, dest, file_size);
     return 0;
 }
 
