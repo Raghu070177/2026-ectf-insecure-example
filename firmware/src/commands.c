@@ -140,13 +140,19 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     len_recv_msg = 0xffff;
     read_packet(TRANSFER_INTERFACE, &cmd, &recv_resp, &len_recv_msg);
 
+    // If the other HSM sent an error or unexpected opcode, report it and return
+    // MUST still send a response on CONTROL_INTERFACE so host doesn't hang
     if (cmd != RECEIVE_MSG) {
         print_error("Opcode mismatch");
+        // Do NOT return -1 silently — host is waiting for us to respond
+        // Send empty receive response so protocol stays in sync
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Opcode mismatch", 15);
         return -1;
     }
 
     if (write_file(command->write_slot, &recv_resp.file, recv_resp.uuid) < 0) {
         print_error("Writing received file failed");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Writing received file failed", 27);
         return -1;
     }
 
@@ -172,6 +178,7 @@ int interrogate(uint16_t pkt_len, uint8_t *buf) {
 
     if (cmd != INTERROGATE_MSG) {
         print_error("Opcode mismatch");
+        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Opcode mismatch", 15);
         return -1;
     }
 
@@ -237,9 +244,7 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
             }
 
             memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
-
-            // Send only the actual data needed: UUID + file header + actual contents
-            // NOT the full sizeof(receive_response_t) which wastes 8KB for small files
+            // Send only actual data needed, not full 8KB struct
             write_length = UUID_SIZE + FILE_TOTAL_SIZE(recv_resp.file.contents_len);
             write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, write_length);
             break;
