@@ -24,21 +24,21 @@ typedef uint16_t group_id_t;
 #define _FLASH_FAT_START 0x0003a000
 #define UUID_SIZE 16
 
-// This struct is functionally defined - FIXED to match usage
+// filesystem_entry_t - DO NOT add fields - this is stored in flash
+// and the layout is fixed. Original: uuid(16) + flash_addr(4) + length(4) = 24 bytes
 typedef struct {
-    uint8_t uuid[UUID_SIZE];
-    uint32_t flash_addr;
-    uint32_t length;
-    uint16_t group_id;  // ADDED: missing group_id field
+    uint8_t uuid[UUID_SIZE];   // 16 bytes
+    uint32_t flash_addr;       // 4 bytes
+    uint32_t length;           // 4 bytes
 } filesystem_entry_t;
 
-static filesystem_entry_t FILE_ALLOCATION_TABLE[MAX_FILE_COUNT];
+// FILE_ALLOCATION_TABLE is defined in filesystem.c - extern here so all files share one instance
+extern filesystem_entry_t FILE_ALLOCATION_TABLE[MAX_FILE_COUNT];
 
 /**********************************************************
  *********** END FUNCTIONALLY DEFINED ELEMENTS ************
  **********************************************************/
 
-// Calculate the flash address for a given file slot
 #define FILE_START_PAGE_FROM_SLOT(slot) (FILES_START_ADDR + (STORED_FILE_SIZE * (slot)))
 
 #define FILE_TOTAL_SIZE(len) (len + offsetof(file_t, contents))
@@ -49,13 +49,14 @@ static filesystem_entry_t FILE_ALLOCATION_TABLE[MAX_FILE_COUNT];
 
 #define FILE_IN_USE 0xdeadbeef
 
-// File structure
+// File structure - group_id is stored inside the file itself
 typedef struct {
-    uint8_t uuid[UUID_SIZE];   // 16 bytes
-    uint32_t flash_addr;       // 4 bytes
-    uint32_t length;           // 4 bytes
-    // REMOVE: uint16_t group_id  ← DELETE THIS LINE
-} filesystem_entry_t;
+    uint32_t in_use;
+    group_id_t group_id;
+    char name[MAX_NAME_SIZE];
+    uint16_t contents_len;
+    uint8_t contents[MAX_CONTENTS_SIZE];
+} file_t;
 
 // Function declarations
 int init_fs();
