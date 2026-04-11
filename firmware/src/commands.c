@@ -77,7 +77,6 @@ int read(uint16_t pkt_len, uint8_t *buf) {
         return -1;
     }
 
-    // Use fixed size for name to ensure consistency
     memcpy(file_info.name, curr_file.name, MAX_NAME_SIZE);
     if (curr_file.contents_len > 0) {
         memcpy(file_info.contents, curr_file.contents, curr_file.contents_len);
@@ -104,7 +103,6 @@ int write(uint16_t pkt_len, uint8_t *buf) {
 
     create_file(&curr_file, command->group_id, command->name, command->contents_len, command->contents);
 
-    // Pass the host-provided UUID to write_file
     if (write_file(command->slot, &curr_file, command->uuid) < 0) {
         print_error("Error storing file");
         return -1;
@@ -130,8 +128,10 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     memset(&request, 0, sizeof(request));
 
     request.slot = command->read_slot;
-    // Renamed to 'permissions' to match security.h definition
-    memcpy(&request.permissions, permissions, sizeof(group_permission_t) * MAX_PERMS);
+    
+    // FIX: Using the correct global variable name from the reference design
+    extern group_permission_t global_permissions[MAX_PERMS];
+    memcpy(request.permissions, global_permissions, sizeof(group_permission_t) * MAX_PERMS);
 
     write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, (void *)&request, sizeof(receive_request_t));
 
@@ -146,7 +146,7 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
         return -1;
     }
 
-    // CRITICAL: Use the recv_resp.uuid to preserve identity for digest tests
+    // Preserve UUID for Triple Digest Test
     if (write_file(command->write_slot, &recv_resp.file, recv_resp.uuid) < 0) {
         print_error("Writing received file failed");
         return -1;
@@ -223,11 +223,8 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
                 break;
             }
 
-            // CRITICAL: Preservation of UUID
             memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
-
-            write_length = sizeof(receive_response_t);
-            write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, write_length);
+            write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, sizeof(receive_response_t));
             break;
 
         default:
