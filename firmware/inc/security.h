@@ -32,8 +32,10 @@ typedef struct {
     bool receive;
 } group_permission_t;
 
-// NOTE: global_permissions is defined as 'const static' in the
-// build-system-generated inc/secrets.h — do NOT redeclare it here.
+// Declare global_permissions as extern so other files can access it.
+// The actual definition is in security.c (weak) and may be overridden
+// by the build system's generated secrets.h.
+extern const group_permission_t global_permissions[MAX_PERMS];
 
 /** @brief Validate a pin against the HSM's pin
  *

@@ -10,8 +10,12 @@
 #include "secrets.h"
 #include <string.h>
 
-// NOTE: global_permissions is defined as 'const static' in the
-// build-system-generated inc/secrets.h. Do NOT redefine it here.
+// Provide a default definition of global_permissions for linking.
+// The build system MAY provide its own definition in secrets.h.
+// If secrets.h provides a definition, this weak symbol will be overridden.
+// This ensures the symbol is always defined for the linker.
+__attribute__((weak)) 
+const group_permission_t global_permissions[MAX_PERMS] = {0};
 
 /**
  * @brief Constant-time comparison to prevent timing attacks.
