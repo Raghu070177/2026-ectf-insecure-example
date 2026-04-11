@@ -1,7 +1,7 @@
 /**
- * @file "simple_uart.c"
+ * @file simple_uart.c
  * @author Samuel Meyers
- * @brief UART Interrupt Handler Implementation
+ * @brief Simple UART Interface Implementation
  * @date 2026
  *
  * This source file is part of an example system for MITRE's 2026 Embedded CTF (eCTF).
@@ -13,39 +13,46 @@
 
 #include "simple_uart.h"
 
-/**********************************************************
- *************** HARDWARE ABSTRACTIONS ********************
- **********************************************************/
-
-// This holds the two UART configurations necessary for communication
-UART_Regs *uart_inst[] = {UART_0_INST, UART_1_INST};
-
-UART_Regs *get_uart_handle(int uart_id) {
-    if (uart_id < 0 || uart_id > CONFIG_UART_COUNT) {
-        // Default on bad input is 0
-        return uart_inst[0];
-    }
-    else {
-        return uart_inst[uart_id];
-    }
-}
-
 /** @brief Reads the next available character from UART.
  *
- *  @param uart_id The index of UART to use
- *  @return The character read.
-*/
-int uart_readbyte(int uart_id){
-    uint8_t data = DL_UART_receiveDataBlocking(get_uart_handle(uart_id));
-    return data;
+ *  @param uart_id The index of UART to use (0 = CONTROL, 1 = TRANSFER)
+ *  @return The character read, or negative on error.
+ */
+int uart_readbyte(int uart_id) {
+    UART_Regs *uart;
+
+    if (uart_id == 0) {
+        uart = UART_0_INST;
+    } else if (uart_id == 1) {
+        uart = UART_1_INST;
+    } else {
+        return -1;
+    }
+
+    // Wait until data is available
+    while (DL_UART_Main_isRXFIFOEmpty(uart));
+
+    return (int)DL_UART_Main_receiveData(uart);
 }
 
 /** @brief Writes a byte to UART.
  *
- *  @param uart_id The index of UART to use
+ *  @param uart_id The index of UART to use (0 = CONTROL, 1 = TRANSFER)
  *  @param data The byte to be written.
-*/
+ */
 void uart_writebyte(int uart_id, uint8_t data) {
-    DL_UART_transmitDataBlocking(get_uart_handle(uart_id), data);
-}
+    UART_Regs *uart;
 
+    if (uart_id == 0) {
+        uart = UART_0_INST;
+    } else if (uart_id == 1) {
+        uart = UART_1_INST;
+    } else {
+        return;
+    }
+
+    // Wait until TX FIFO has space
+    while (DL_UART_Main_isTXFIFOFull(uart));
+
+    DL_UART_Main_transmitData(uart, data);
+}

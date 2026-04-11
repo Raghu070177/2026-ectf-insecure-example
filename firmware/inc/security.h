@@ -32,6 +32,9 @@ typedef struct {
     bool receive;
 } group_permission_t;
 
+// NOTE: global_permissions is defined as 'const static' in the
+// build-system-generated inc/secrets.h — do NOT redeclare it here.
+
 /** @brief Validate a pin against the HSM's pin
  *
  *  @param pin Requested pin to validate.

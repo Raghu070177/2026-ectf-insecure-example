@@ -1,7 +1,6 @@
 /**
  * @file "simple_crypto.c"
- * @author Ben Janis
- * @brief Simplified Crypto API Implementation
+ * @brief Simplified Crypto API Implementation - No external dependencies
  * @date 2026
  *
  * This source file is part of an example system for MITRE's 2026 Embedded CTF (eCTF).
@@ -11,99 +10,81 @@
  * @copyright Copyright (c) 2026 The MITRE Corporation
  */
 
-#if CRYPTO_EXAMPLE
-
 #include "simple_crypto.h"
-#include "security.h"
 #include <stdint.h>
 #include <string.h>
 
+/******************************** IMPLEMENTATION ********************************/
 
-/******************************** FUNCTION PROTOTYPES ********************************/
-/** @brief Encrypts plaintext using a symmetric cipher
- *
- * @param plaintext A pointer to a buffer of length len containing the
- *          plaintext to encrypt
- * @param len The length of the plaintext to encrypt. Must be a multiple of
- *          BLOCK_SIZE (16 bytes)
- * @param key A pointer to a buffer of length KEY_SIZE (16 bytes) containing
- *          the key to use for encryption
- * @param ciphertext A pointer to a buffer of length len where the resulting
- *          ciphertext will be written to
- *
- * @return 0 on success, -1 on bad length, other non-zero for other error
+/** @brief Simple XOR-based encryption (INSECURE - for testing only)
+ * 
+ * NOTE: This is NOT secure cryptography. This is only a placeholder to allow
+ * the code to compile. You MUST replace this with proper cryptographic
+ * implementation for the final design.
  */
 int encrypt_sym(uint8_t *plaintext, size_t len, uint8_t *key, uint8_t *ciphertext) {
-    Aes ctx; // Context for encryption
-    int result; // Library result
-
-    // Ensure valid length
-    if (len <= 0 || len % BLOCK_SIZE)
+    // Check length is multiple of BLOCK_SIZE (16 bytes)
+    if (len <= 0 || len % BLOCK_SIZE != 0) {
         return -1;
-
-    // Set the key for encryption
-    result = wc_AesSetKey(&ctx, key, 16, NULL, AES_ENCRYPTION);
-    if (result != 0)
-        return result; // Report error
-
-
-    // Encrypt each block
-    for (int i = 0; i < len; i += BLOCK_SIZE) {
-        result = wc_AesEncryptDirect(&ctx, ciphertext + i, plaintext + i);
-        if (result != 0)
-            return result; // Report error
     }
+    
+    // Simple XOR encryption
+    for (size_t i = 0; i < len; i++) {
+        ciphertext[i] = plaintext[i] ^ key[i % KEY_SIZE];
+    }
+    
     return 0;
 }
 
-/** @brief Decrypts ciphertext using a symmetric cipher
- *
- * @param ciphertext A pointer to a buffer of length len containing the
- *          ciphertext to decrypt
- * @param len The length of the ciphertext to decrypt. Must be a multiple of
- *          BLOCK_SIZE (16 bytes)
- * @param key A pointer to a buffer of length KEY_SIZE (16 bytes) containing
- *          the key to use for decryption
- * @param plaintext A pointer to a buffer of length len where the resulting
- *          plaintext will be written to
- *
- * @return 0 on success, -1 on bad length, other non-zero for other error
+/** @brief Simple XOR-based decryption (INSECURE - for testing only)
+ * 
+ * NOTE: This is NOT secure cryptography. This is only a placeholder to allow
+ * the code to compile. You MUST replace this with proper cryptographic
+ * implementation for the final design.
  */
 int decrypt_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *plaintext) {
-    Aes ctx; // Context for decryption
-    int result; // Library result
-
-    // Ensure valid length
-    if (len <= 0 || len % BLOCK_SIZE)
+    // Check length is multiple of BLOCK_SIZE (16 bytes)
+    if (len <= 0 || len % BLOCK_SIZE != 0) {
         return -1;
-
-    // Set the key for decryption
-    result = wc_AesSetKey(&ctx, key, 16, NULL, AES_DECRYPTION);
-    if (result != 0)
-        return result; // Report error
-
-    // Decrypt each block
-    for (int i = 0; i < len; i += BLOCK_SIZE) {
-        result = wc_AesDecryptDirect(&ctx, plaintext + i, ciphertext + i);
-        if (result != 0)
-            return result; // Report error
     }
+    
+    // Simple XOR decryption (same as encryption for XOR)
+    for (size_t i = 0; i < len; i++) {
+        plaintext[i] = ciphertext[i] ^ key[i % KEY_SIZE];
+    }
+    
     return 0;
 }
 
-/** @brief Hashes arbitrary-length data
- *
- * @param data A pointer to a buffer of length len containing the data
- *          to be hashed
- * @param len The length of the plaintext to hash
- * @param hash_out A pointer to a buffer of length HASH_SIZE (16 bytes) where the resulting
- *          hash output will be written to
- *
- * @return 0 on success, non-zero for other error
+/** @brief Simple XOR-based hash (INSECURE - for testing only)
+ * 
+ * NOTE: This is NOT secure cryptography. This is only a placeholder to allow
+ * the code to compile. You MUST replace this with proper cryptographic
+ * implementation for the final design.
  */
 int hash(void *data, size_t len, uint8_t *hash_out) {
-    // Pass values to hash
-    return wc_Md5Hash((uint8_t *)data, len, hash_out);
+    if (data == NULL || hash_out == NULL) {
+        return -1;
+    }
+    
+    // Initialize hash output to zeros
+    memset(hash_out, 0, HASH_SIZE);
+    
+    uint8_t *bytes = (uint8_t *)data;
+    
+    // Simple XOR-based hash with diffusion
+    for (size_t i = 0; i < len; i++) {
+        hash_out[i % HASH_SIZE] ^= bytes[i];
+        // Add some diffusion - mix bits
+        hash_out[i % HASH_SIZE] = (hash_out[i % HASH_SIZE] << 1) | (hash_out[i % HASH_SIZE] >> 7);
+        hash_out[i % HASH_SIZE] += bytes[i];
+    }
+    
+    // Additional diffusion pass
+    for (size_t i = 0; i < HASH_SIZE; i++) {
+        hash_out[i] ^= hash_out[(i + 1) % HASH_SIZE];
+        hash_out[i] = (hash_out[i] << 3) | (hash_out[i] >> 5);
+    }
+    
+    return 0;
 }
-
-#endif
