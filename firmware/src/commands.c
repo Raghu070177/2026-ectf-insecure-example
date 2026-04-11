@@ -82,13 +82,9 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     len_recv_msg = 0xffff;
     read_packet(TRANSFER_INTERFACE, &cmd, &recv_resp, &len_recv_msg);
 
-<<<<<<< HEAD
-=======
     // If other HSM denied or returned error, print_error sends ONE error packet on CONTROL
     // print_error is a macro for write_packet(CONTROL_INTERFACE, ERROR_MSG, ...) — DO NOT add another
->>>>>>> 710d0bb84f2c7984370d418605596afd1d8fad6b
     if (cmd != RECEIVE_MSG) {
-        // Other HSM denied - print_error sends ONE error to host as the RECEIVE response
         print_error("Opcode mismatch");
         return -1;
     }
@@ -149,35 +145,21 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
 
             metadata = get_file_metadata(command->slot);
             if (metadata == NULL) {
-<<<<<<< HEAD
-                // Send error on TRANSFER so requester doesn't hang
-                // Then send LISTEN_MSG on CONTROL — host expects exactly ONE response to LISTEN
-                // DO NOT call print_error here — that would send a second packet on CONTROL
-                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Getting metadata failed", 22);
-=======
                 // Send error on TRANSFER so requester doesn't hang, then LISTEN_MSG so host knows we're done
                 write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Getting metadata failed", 22);
                 print_error("Getting metadata failed");
->>>>>>> 710d0bb84f2c7984370d418605596afd1d8fad6b
                 write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
                 return -1;
             }
 
             if (read_file(command->slot, &recv_resp.file) < 0) {
                 write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Failed to read file", 19);
-<<<<<<< HEAD
-=======
                 print_error("Failed to read file");
->>>>>>> 710d0bb84f2c7984370d418605596afd1d8fad6b
                 write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
                 return -1;
             }
 
-<<<<<<< HEAD
-            // Validate requester has RECEIVE permission for this file's group
-=======
             // Check requester has RECEIVE permission for this file's group
->>>>>>> 710d0bb84f2c7984370d418605596afd1d8fad6b
             {
                 bool requester_has_permission = false;
                 for (int i = 0; i < MAX_PERMS; i++) {
@@ -188,35 +170,21 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
                     }
                 }
                 if (!requester_has_permission) {
-<<<<<<< HEAD
-                    // Send error on TRANSFER, then LISTEN_MSG on CONTROL
-                    // No print_error — that would send extra packet and hang
-                    write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Could not import file", 21);
-=======
                     write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Could not import file", 21);
                     print_error("Requester lacks receive permission");
->>>>>>> 710d0bb84f2c7984370d418605596afd1d8fad6b
                     write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
                     return -1;
                 }
             }
 
             memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
-<<<<<<< HEAD
-            // Send actual size only (not full 8KB struct)
-=======
             // Send only actual data: UUID + file header + actual contents (not full 8KB struct)
->>>>>>> 710d0bb84f2c7984370d418605596afd1d8fad6b
             write_length = UUID_SIZE + FILE_TOTAL_SIZE(recv_resp.file.contents_len);
             write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, write_length);
             break;
 
         default:
-<<<<<<< HEAD
-            // No print_error — that sends extra packet on CONTROL
-=======
             print_error("Bad message type");
->>>>>>> 710d0bb84f2c7984370d418605596afd1d8fad6b
             write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
             return -1;
     }
