@@ -14,14 +14,9 @@
 #include "secrets.h"
 #include <string.h>
 
-/**********************************************************
- ******************** HELPER FUNCTIONS ********************
- **********************************************************/
-
 void generate_list_files(list_response_t *file_list) {
     file_list->n_files = 0;
     file_t temp_file;
-
     for (uint8_t i = 0; i < MAX_FILE_COUNT; i++) {
         if (is_slot_in_use(i)) {
             read_file(i, &temp_file);
@@ -33,24 +28,13 @@ void generate_list_files(list_response_t *file_list) {
     }
 }
 
-/**********************************************************
- ******************** COMMAND HANDLERS ********************
- **********************************************************/
-
 int list(uint16_t pkt_len, uint8_t *buf) {
     list_command_t *command = (list_command_t*)buf;
     list_response_t file_list;
-
-    if (!check_pin(command->pin)) {
-        print_error("Invalid pin");
-        return -1;
-    }
-
+    if (!check_pin(command->pin)) { print_error("Invalid pin"); return -1; }
     memset(&file_list, 0, sizeof(file_list));
     generate_list_files(&file_list);
-
-    pkt_len_t length = LIST_PKT_LEN(file_list.n_files);
-    write_packet(CONTROL_INTERFACE, LIST_MSG, &file_list, length);
+    write_packet(CONTROL_INTERFACE, LIST_MSG, &file_list, LIST_PKT_LEN(file_list.n_files));
     return 0;
 }
 
@@ -58,61 +42,23 @@ int read(uint16_t pkt_len, uint8_t *buf) {
     read_command_t *command = (read_command_t*)buf;
     read_response_t file_info;
     file_t curr_file;
-
-    if (!check_pin(command->pin)) {
-        print_error("Invalid pin");
-        return -1;
-    }
-
+    if (!check_pin(command->pin)) { print_error("Invalid pin"); return -1; }
     memset(&file_info, 0, sizeof(read_response_t));
-
-    if (read_file(command->slot, &curr_file) < 0) {
-        print_error("Failed to read file");
-        return -1;
-    }
-
-    if (!validate_permission(curr_file.group_id, PERM_READ)) {
-        print_error("Invalid permission - read access denied");
-        return -1;
-    }
-
+    if (read_file(command->slot, &curr_file) < 0) { print_error("Failed to read file"); return -1; }
+    if (!validate_permission(curr_file.group_id, PERM_READ)) { print_error("Invalid permission - read access denied"); return -1; }
     memcpy(file_info.name, curr_file.name, strlen((char *)curr_file.name));
-    if (curr_file.contents_len > 0) {
-        memcpy(file_info.contents, curr_file.contents, curr_file.contents_len);
-    }
-
-    pkt_len_t length = MAX_NAME_SIZE + curr_file.contents_len;
-    write_packet(CONTROL_INTERFACE, READ_MSG, &file_info, length);
+    if (curr_file.contents_len > 0) memcpy(file_info.contents, curr_file.contents, curr_file.contents_len);
+    write_packet(CONTROL_INTERFACE, READ_MSG, &file_info, MAX_NAME_SIZE + curr_file.contents_len);
     return 0;
 }
 
 int write(uint16_t pkt_len, uint8_t *buf) {
     write_command_t *command = (write_command_t*)buf;
     file_t curr_file;
-
-    if (!check_pin(command->pin)) {
-        print_error("Invalid pin");
-        return -1;
-    }
-
-    if (!validate_permission(command->group_id, PERM_WRITE)) {
-        print_error("Invalid permission - write access denied");
-        return -1;
-    }
-
-    create_file(
-        &curr_file,
-        command->group_id,
-        command->name,
-        command->contents_len,
-        command->contents
-    );
-
-    if (write_file(command->slot, &curr_file, command->uuid) < 0) {
-        print_error("Error storing file");
-        return -1;
-    }
-
+    if (!check_pin(command->pin)) { print_error("Invalid pin"); return -1; }
+    if (!validate_permission(command->group_id, PERM_WRITE)) { print_error("Invalid permission - write access denied"); return -1; }
+    create_file(&curr_file, command->group_id, command->name, command->contents_len, command->contents);
+    if (write_file(command->slot, &curr_file, command->uuid) < 0) { print_error("Error storing file"); return -1; }
     write_packet(CONTROL_INTERFACE, WRITE_MSG, NULL, 0);
     return 0;
 }
@@ -124,14 +70,10 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     msg_type_t cmd;
     uint16_t len_recv_msg;
 
-    if (!check_pin(command->pin)) {
-        print_error("Invalid pin");
-        return -1;
-    }
+    if (!check_pin(command->pin)) { print_error("Invalid pin"); return -1; }
 
     memset(&recv_resp, 0, sizeof(recv_resp));
     memset(&request, 0, sizeof(request));
-
     request.slot = command->read_slot;
     memcpy(&request.permissions, &global_permissions, sizeof(group_permission_t) * MAX_PERMS);
 
@@ -140,19 +82,15 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     len_recv_msg = 0xffff;
     read_packet(TRANSFER_INTERFACE, &cmd, &recv_resp, &len_recv_msg);
 
-    // If the other HSM sent an error or unexpected opcode, report it and return
-    // MUST still send a response on CONTROL_INTERFACE so host doesn't hang
+    // If other HSM denied or returned error, print_error sends ONE error packet on CONTROL
+    // print_error is a macro for write_packet(CONTROL_INTERFACE, ERROR_MSG, ...) — DO NOT add another
     if (cmd != RECEIVE_MSG) {
         print_error("Opcode mismatch");
-        // Do NOT return -1 silently — host is waiting for us to respond
-        // Send empty receive response so protocol stays in sync
-        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Opcode mismatch", 15);
         return -1;
     }
 
     if (write_file(command->write_slot, &recv_resp.file, recv_resp.uuid) < 0) {
         print_error("Writing received file failed");
-        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Writing received file failed", 27);
         return -1;
     }
 
@@ -166,19 +104,14 @@ int interrogate(uint16_t pkt_len, uint8_t *buf) {
     list_response_t final_list_buf;
     uint16_t len_recv_msg;
 
-    if (!check_pin(command->pin)) {
-        print_error("Invalid pin");
-        return -1;
-    }
+    if (!check_pin(command->pin)) { print_error("Invalid pin"); return -1; }
 
     write_packet(TRANSFER_INTERFACE, INTERROGATE_MSG, NULL, 0);
-
     len_recv_msg = 0xffff;
     read_packet(TRANSFER_INTERFACE, &cmd, &final_list_buf, &len_recv_msg);
 
     if (cmd != INTERROGATE_MSG) {
         print_error("Opcode mismatch");
-        write_packet(CONTROL_INTERFACE, ERROR_MSG, "Opcode mismatch", 15);
         return -1;
     }
 
@@ -212,6 +145,7 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
 
             metadata = get_file_metadata(command->slot);
             if (metadata == NULL) {
+                // Send error on TRANSFER so requester doesn't hang, then LISTEN_MSG so host knows we're done
                 write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Getting metadata failed", 22);
                 print_error("Getting metadata failed");
                 write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
@@ -225,7 +159,7 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
                 return -1;
             }
 
-            // Validate requester has RECEIVE permission for this file's group
+            // Check requester has RECEIVE permission for this file's group
             {
                 bool requester_has_permission = false;
                 for (int i = 0; i < MAX_PERMS; i++) {
@@ -244,7 +178,7 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
             }
 
             memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
-            // Send only actual data needed, not full 8KB struct
+            // Send only actual data: UUID + file header + actual contents (not full 8KB struct)
             write_length = UUID_SIZE + FILE_TOTAL_SIZE(recv_resp.file.contents_len);
             write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, write_length);
             break;
