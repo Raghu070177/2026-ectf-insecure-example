@@ -129,7 +129,8 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
 
     request.slot = command->read_slot;
     
-    // Use global_permissions from security.h (no extern needed here)
+    // FIX: Using the correct global variable name from the reference design
+    extern group_permission_t global_permissions[MAX_PERMS];
     memcpy(request.permissions, global_permissions, sizeof(group_permission_t) * MAX_PERMS);
 
     write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, (void *)&request, sizeof(receive_request_t));
