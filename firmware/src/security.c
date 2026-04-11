@@ -10,8 +10,11 @@
 #include "secrets.h"
 #include <string.h>
 
-// NOTE: global_permissions is defined as 'const static' in the
-// build-system-generated inc/secrets.h. Do NOT redefine it here.
+// Global permissions array - defined here for linking.
+// The actual values will be patched by the provisioning tool
+// or provided by the build system via secrets.h.
+// NOT const - the provisioning tool may need to modify it.
+group_permission_t global_permissions[MAX_PERMS] = {0};
 
 /**
  * @brief Constant-time comparison to prevent timing attacks.
