@@ -4,6 +4,10 @@
  * @brief eCTF command handlers
  * @date 2026
  *
+ * This source file is part of an example system for MITRE's 2026 Embedded CTF (eCTF).
+ * This code is being provided only for educational purposes for the 2026 MITRE eCTF competition,
+ * and may not meet MITRE standards for quality. Use this code at your own risk!
+ *
  * @copyright Copyright (c) 2026 The MITRE Corporation
  */
 
@@ -11,6 +15,7 @@
 #include "commands.h"
 #include "filesystem.h"
 #include "security.h"
+#include "secrets.h"
 #include <string.h>
 
 /**********************************************************
@@ -24,11 +29,9 @@ void generate_list_files(list_response_t *file_list) {
     for (uint8_t i = 0; i < MAX_FILE_COUNT; i++) {
         if (is_slot_in_use(i)) {
             read_file(i, &temp_file);
-
             file_list->metadata[file_list->n_files].slot = i;
             file_list->metadata[file_list->n_files].group_id = temp_file.group_id;
-            // Use memcpy to preserve full name buffer/padding for digest consistency
-            memcpy(file_list->metadata[file_list->n_files].name, temp_file.name, MAX_NAME_SIZE);
+            strcpy(file_list->metadata[file_list->n_files].name, (char *)&temp_file.name);
             file_list->n_files++;
         }
     }
@@ -73,14 +76,12 @@ int read(uint16_t pkt_len, uint8_t *buf) {
     }
 
     if (!validate_permission(curr_file.group_id, PERM_READ)) {
-        print_error("Invalid permission");
+        print_error("Invalid permission - read access denied");
         return -1;
     }
 
-    memcpy(file_info.name, curr_file.name, MAX_NAME_SIZE);
-    if (curr_file.contents_len > 0) {
-        memcpy(file_info.contents, curr_file.contents, curr_file.contents_len);
-    }
+    memcpy(file_info.name, &curr_file.name, strlen((char *)curr_file.name));
+    memcpy(file_info.contents, &curr_file.contents, curr_file.contents_len);
 
     pkt_len_t length = MAX_NAME_SIZE + curr_file.contents_len;
     write_packet(CONTROL_INTERFACE, READ_MSG, &file_info, length);
@@ -97,11 +98,17 @@ int write(uint16_t pkt_len, uint8_t *buf) {
     }
 
     if (!validate_permission(command->group_id, PERM_WRITE)) {
-        print_error("Invalid permission");
+        print_error("Invalid permission - write access denied");
         return -1;
     }
 
-    create_file(&curr_file, command->group_id, command->name, command->contents_len, command->contents);
+    create_file(
+        &curr_file,
+        command->group_id,
+        command->name,
+        command->contents_len,
+        command->contents
+    );
 
     if (write_file(command->slot, &curr_file, command->uuid) < 0) {
         print_error("Error storing file");
@@ -128,24 +135,18 @@ int receive(uint16_t pkt_len, uint8_t *buf) {
     memset(&request, 0, sizeof(request));
 
     request.slot = command->read_slot;
-    
-    // Use global_permissions from security.h
-    memcpy(request.permissions, global_permissions, sizeof(group_permission_t) * MAX_PERMS);
+    memcpy(&request.permissions, &global_permissions, sizeof(group_permission_t) * MAX_PERMS);
 
     write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, (void *)&request, sizeof(receive_request_t));
 
-    len_recv_msg = sizeof(receive_response_t);
-    if (read_packet(TRANSFER_INTERFACE, &cmd, &recv_resp, &len_recv_msg) != MSG_OK) {
-        print_error("Transfer timeout");
-        return -1;
-    }
+    len_recv_msg = 0xffff;
+    read_packet(TRANSFER_INTERFACE, &cmd, &recv_resp, &len_recv_msg);
 
     if (cmd != RECEIVE_MSG) {
         print_error("Opcode mismatch");
         return -1;
     }
 
-    // Preserve UUID for Triple Digest Test
     if (write_file(command->write_slot, &recv_resp.file, recv_resp.uuid) < 0) {
         print_error("Writing received file failed");
         return -1;
@@ -168,11 +169,8 @@ int interrogate(uint16_t pkt_len, uint8_t *buf) {
 
     write_packet(TRANSFER_INTERFACE, INTERROGATE_MSG, NULL, 0);
 
-    len_recv_msg = sizeof(list_response_t);
-    if (read_packet(TRANSFER_INTERFACE, &cmd, &final_list_buf, &len_recv_msg) != MSG_OK) {
-        print_error("Transfer timeout");
-        return -1;
-    }
+    len_recv_msg = 0xffff;
+    read_packet(TRANSFER_INTERFACE, &cmd, &final_list_buf, &len_recv_msg);
 
     if (cmd != INTERROGATE_MSG) {
         print_error("Opcode mismatch");
@@ -184,7 +182,7 @@ int interrogate(uint16_t pkt_len, uint8_t *buf) {
 }
 
 int listen(uint16_t pkt_len, uint8_t *buf) {
-    uint8_t uart_buf[MAX_MSG_SIZE]; 
+    uint8_t uart_buf[sizeof(receive_request_t)];
     msg_type_t cmd;
     pkt_len_t write_length, read_length;
     list_response_t file_list;
@@ -194,11 +192,7 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
 
     read_length = sizeof(uart_buf);
     memset(uart_buf, 0, sizeof(uart_buf));
-    
-    if (read_packet(TRANSFER_INTERFACE, &cmd, uart_buf, &read_length) != MSG_OK) {
-        write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
-        return 0;
-    }
+    read_packet(TRANSFER_INTERFACE, &cmd, uart_buf, &read_length);
 
     switch (cmd) {
         case INTERROGATE_MSG:
@@ -211,23 +205,50 @@ int listen(uint16_t pkt_len, uint8_t *buf) {
         case RECEIVE_MSG:
             command = (receive_request_t *)uart_buf;
 
-            if (read_file(command->slot, &recv_resp.file) < 0) {
-                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Read failed", 11);
-                break;
-            }
-
             metadata = get_file_metadata(command->slot);
             if (metadata == NULL) {
-                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Metadata failed", 15);
-                break;
+                // Always respond on TRANSFER so requester does not hang
+                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Getting metadata failed", 22);
+                print_error("Getting metadata failed");
+                write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
+                return -1;
+            }
+
+            if (read_file(command->slot, &recv_resp.file) < 0) {
+                write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Failed to read file", 19);
+                print_error("Failed to read file");
+                write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
+                return -1;
+            }
+
+            // Validate requester has RECEIVE permission for this file's group
+            {
+                bool requester_has_permission = false;
+                for (int i = 0; i < MAX_PERMS; i++) {
+                    if (command->permissions[i].group_id == recv_resp.file.group_id
+                        && command->permissions[i].receive) {
+                        requester_has_permission = true;
+                        break;
+                    }
+                }
+                if (!requester_has_permission) {
+                    // Must respond on TRANSFER so requester does not hang
+                    write_packet(TRANSFER_INTERFACE, ERROR_MSG, "Could not import file", 21);
+                    print_error("Requester lacks receive permission");
+                    write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
+                    return -1;
+                }
             }
 
             memcpy(&recv_resp.uuid, &metadata->uuid, UUID_SIZE);
-            write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, sizeof(receive_response_t));
+            write_length = sizeof(receive_response_t);
+            write_packet(TRANSFER_INTERFACE, RECEIVE_MSG, &recv_resp, write_length);
             break;
 
         default:
-            break;
+            print_error("Bad message type");
+            write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
+            return -1;
     }
 
     write_packet(CONTROL_INTERFACE, LISTEN_MSG, NULL, 0);
